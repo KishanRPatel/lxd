@@ -684,16 +684,18 @@ void forkgetnet(char *buf, char *cur, ssize_t size) {
 void forkproxy(char *buf, char *cur, ssize_t size) {
 	int cmdline, listen_pid, connect_pid, fdnum, forked, childPid, ret;
 	char fdpath[80];
-	char *logPath = NULL, *pidPath = NULL;
+	char *listen_addr = NULL, *connect_addr = NULL, *listener_type = NULL, *connector_type = NULL, *logPath = NULL, *pidPath = NULL;
 	FILE *logFile = NULL, *pidFile = NULL;
 
 	// Get the arguments
 	ADVANCE_ARG_REQUIRED();
 	listen_pid = atoi(cur);
 	ADVANCE_ARG_REQUIRED();
+	listen_addr = cur;
 	ADVANCE_ARG_REQUIRED();
 	connect_pid = atoi(cur);
 	ADVANCE_ARG_REQUIRED();
+	connect_addr = cur;
 	ADVANCE_ARG_REQUIRED();
 	fdnum = atoi(cur);
 	ADVANCE_ARG_REQUIRED();
@@ -757,16 +759,44 @@ void forkproxy(char *buf, char *cur, ssize_t size) {
 
 	// Join the listener ns if not already setup
 	if (access(fdpath, F_OK) < 0) {
-		// Attach to the network namespace of the listener
-		if (dosetns(listen_pid, "net") < 0) {
-			fprintf(stderr, "Failed setns to listener network namespace: %s\n", strerror(errno));
-			_exit(1);
+		fprintf(stderr, "FIRST TIME THROUGH!!!!!\n");
+		listener_type = strtok(listen_addr, ":");
+		if (strcmp(listener_type, "tcp") == 0) { 
+			// Attach to the network namespace of the listener
+			if (dosetns(listen_pid, "net") < 0) {
+				fprintf(stderr, "Failed setns to listener network namespace: %s\n", strerror(errno));
+				_exit(1);
+			}
+		} else if (strcmp(listener_type, "unix") == 0) {
+			// Attach to the user and mnt namespace of the listener
+			if (dosetns(listen_pid, "mnt") < 0) {
+				fprintf(stderr, "Failed setns to listener mnt namespace: %s\n", strerror(errno));
+				_exit(1);
+			}
+			// if (dosetns(listen_pid, "user") < 0) {
+			// 	fprintf(stderr, "Failed setns to listener user namespace: %s\n", strerror(errno));
+			// 	_exit(1);
+			// }
 		}
 	} else {
-		// Join the connector ns now
-		if (dosetns(connect_pid, "net") < 0) {
-			fprintf(stderr, "Failed setns to connector network namespace: %s\n", strerror(errno));
-			_exit(1);
+		fprintf(stderr, "SECOND TIME THROUGH!!!!!\n");
+		connector_type = strtok(connect_addr, ":");
+		if (strcmp(connector_type, "tcp") == 0) {
+			// Attach to the network namespace of the connector
+			if (dosetns(connect_pid, "net") < 0) {
+				fprintf(stderr, "Failed setns to connector network namespace: %s\n", strerror(errno));
+				_exit(1);
+			}
+		} else if (strcmp(connector_type, "unix") == 0) {
+			// Attach to the user and mnt namespace of the connector
+			if (dosetns(connect_pid, "mnt") < 0) {
+				fprintf(stderr, "Failed setns to connector mnt namespace: %s\n", strerror(errno));
+				_exit(1);
+			}
+			// if (dosetns(connect_pid, "user") < 0) {
+			// 	fprintf(stderr, "Failed setns to connector user namespace: %s\n", strerror(errno));
+			// 	_exit(1);
+			// }
 		}
 	}
 }

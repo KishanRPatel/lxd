@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
 
-	"github.com/lxc/lxd/shared"
 )
 
 func cmdProxyDevStart(args *Args) error {
@@ -32,9 +32,15 @@ func cmdProxyDevStart(args *Args) error {
 	args.Params[5] = "1"
 
 	// Check where we are in initialization
-	if !shared.PathExists(fmt.Sprintf("/proc/self/fd/%d", fd)) {
-		fmt.Printf("Listening on %s in %s, forwarding to %s from %s\n", listenAddr, listenPid, connectAddr, connectPid)
+	// Re-create listener from fd
+	listenFile := os.NewFile(uintptr(fd), "listener")
+	if listenFile == nil {
 
+		dumpDir("/", 5)
+		dumpDir("/proc/self/fd", 15)
+	
+		fmt.Printf("Listening on %s in %s, forwarding to %s from %s\n", listenAddr, listenPid, connectAddr, connectPid)
+		
 		file, err := getListenerFile(listenAddr)
 		if err != nil {
 			return err
@@ -54,6 +60,7 @@ func cmdProxyDevStart(args *Args) error {
 		fmt.Printf("Re-executing proxy process\n")
 
 		args.Params[4] = strconv.Itoa(int(newFd))
+		fmt.Printf("THE LISTENER FD IS: %s\n", args.Params[4])
 		execArgs := append([]string{"lxd", "forkproxy"}, args.Params...)
 
 		err = syscall.Exec("/proc/self/exe", execArgs, []string{})
@@ -62,8 +69,8 @@ func cmdProxyDevStart(args *Args) error {
 		}
 	}
 
-	// Re-create listener from fd
-	listenFile := os.NewFile(uintptr(fd), "listener")
+	dumpDir("/", 8)
+	
 	listener, err := net.FileListener(listenFile)
 	if err != nil {
 		return fmt.Errorf("failed to re-assemble listener: %v", err)
@@ -126,4 +133,16 @@ func getDestConn(connectAddr string) (net.Conn, error) {
 	fields := strings.SplitN(connectAddr, ":", 2)
 	addr := strings.Join(fields[1:], "")
 	return net.Dial(fields[0], addr)
+}
+
+func dumpDir(path string, limit int) {
+	// Load the directory listing
+	devFiles, _ := ioutil.ReadDir(path)
+
+	for i, f := range devFiles {
+		fmt.Printf("%s/%s\n", path, f.Name())
+		if i == limit {
+			break
+		}
+	}
 }
